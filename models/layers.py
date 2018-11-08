@@ -8,6 +8,7 @@ Created on Thu Nov  8 12:27:09 2018
 from torch import nn
 import torch as t
 import torch.nn.functional as F
+from torch.autograd import Variable
 import numpy as np
 
 class WeaveLayer(nn.Module):
@@ -113,7 +114,8 @@ class GraphConvLayer(nn.Module):
     super(GraphConvLayer, self).__init__(**kwargs)
     self.n_hidden = n_hidden
     self.n_atom_input_feat = n_atom_input_feat
-    self.linear_AA = nn.Linear(self.n_atom_input_feat, self.n_hidden)
+    self.linear_AA = nn.Linear(self.n_atom_input_feat, self.n_hidden, bias=False)
+    self.bias = nn.Parameter(t.zeros(self.n_hidden), requires_grad=True)
 
   def forward(self, node_feats, A):
     """ node_feats: batch_size * n_nodes * node_feat
@@ -121,5 +123,6 @@ class GraphConvLayer(nn.Module):
     """
     x = self.linear_AA(node_feats)
     x = t.matmul(A, x)
+    x = x + self.bias
     outputs = F.relu(x)
     return outputs
