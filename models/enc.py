@@ -18,7 +18,7 @@ class WeaveEnc(nn.Module):
                n_pair_feat=15,
                n_node_hidden=64,
                n_pair_hidden=64,
-               n_graph_feat=128,
+               n_latent_feat=128,
                n_weave_layers=3):
     """
     Parameters
@@ -41,7 +41,7 @@ class WeaveEnc(nn.Module):
     self.n_pair_feat = n_pair_feat
     self.n_node_hidden = n_node_hidden
     self.n_pair_hidden = n_pair_hidden
-    self.n_graph_feat = n_graph_feat
+    self.n_latent_feat = n_latent_feat
     self.n_weave_layers = n_weave_layers
     
     weave_module = []
@@ -59,29 +59,35 @@ class WeaveEnc(nn.Module):
       in_pair_feat = self.n_pair_hidden
     self.weave_module = nn.ModuleList(weave_module)
     
-    self.fc = nn.Sequential(
+    self.mean_fc = nn.Sequential(
           nn.Linear(self.n_node_hidden, self.n_node_hidden),
           nn.ReLU(True),
           nn.Linear(self.n_node_hidden, self.n_node_hidden),
           nn.ReLU(True),
-          nn.Linear(self.n_node_hidden, self.n_graph_feat))
+          nn.Linear(self.n_node_hidden, self.n_latent_feat))
+    self.logstd_fc = nn.Sequential(
+          nn.Linear(self.n_node_hidden, self.n_node_hidden),
+          nn.ReLU(True),
+          nn.Linear(self.n_node_hidden, self.n_node_hidden),
+          nn.ReLU(True),
+          nn.Linear(self.n_node_hidden, self.n_latent_feat))
 
-
-  def forward(self, node_feats, pair_feats):
+  def forward(self, node_feats, pair_feats, A):
     """ node_feats: batch_size * n_nodes * node_feat
         pair_feats: batch_size * n_nodes * n_nodes * pair_feat
     """
     for i in range(self.n_weave_layers):
       node_feats, pair_feats = self.weave_module[i](node_feats, pair_feats)
-    out = self.fc(node_feats)
-    return out
+    z_mean = self.mean_fc(node_feats)
+    z_log_std = self.logstd_fc(node_feats)
+    return z_mean, z_log_std
 
 class GraphConvEnc(nn.Module):
 
   def __init__(self,
                n_node_feat=23,
                n_graphconv=[64, 64],
-               n_graph_feat=128,
+               n_latent_feat=128,
                **kwargs):
     """
     Parameters
@@ -94,7 +100,7 @@ class GraphConvEnc(nn.Module):
       Size of latent embedding for each atom
     """
     super(GraphConvEnc, self).__init__(**kwargs)
-    self.n_graph_feat = n_graph_feat
+    self.n_latent_feat = n_latent_feat
     self.n_graphconv = n_graphconv
     self.n_node_feat = n_node_feat
     
@@ -106,16 +112,21 @@ class GraphConvEnc(nn.Module):
       
     self.gc_module = nn.ModuleList(gc_module)
     
-    self.fc = nn.Sequential(
+    self.mean_fc = nn.Sequential(
           nn.Linear(n_hidden, n_hidden),
           nn.ReLU(True),
-          nn.Linear(n_hidden, self.n_graph_feat))
+          nn.Linear(n_hidden, self.n_latent_feat))
+    self.logstd_fc = nn.Sequential(
+          nn.Linear(n_hidden, n_hidden),
+          nn.ReLU(True),
+          nn.Linear(n_hidden, self.n_latent_feat))
 
-  def forward(self, node_feats, A):
+  def forward(self, node_feats, pair_feats, A):
     """ node_feats: batch_size * n_nodes * node_feat
         A: batch_size * n_nodes * n_nodes
     """
     for i in range(len(self.n_graphconv)):
       node_feats = self.gc_module[i](node_feats, A)
-    out = self.fc(node_feats)
-    return out
+    z_mean = self.mean_fc(node_feats)
+    z_log_std = self.logstd_fc(node_feats)
+    return z_mean, z_log_std
