@@ -105,7 +105,7 @@ class Trainer(object):
           batch.append(Variable(t.from_numpy(item).float()))
         if self.opt.gpu:
           for i, item in enumerate(batch):
-            batch[i] = item[0].cuda()
+            batch[i] = item.cuda()
             
         node_feats, pair_feats, A, weights = batch
         atom_pred, bond_pred, z_mean, z_logstd = self.net(node_feats, pair_feats, A, random=True)
