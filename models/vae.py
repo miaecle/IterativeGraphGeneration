@@ -97,7 +97,8 @@ class Trainer(object):
     data_batches = self.assemble_batch(train_data, sample_weights=sample_weights)
       
     for epoch in range(n_epochs):      
-      accum_loss = 0
+      accum_rec_loss = 0
+      accum_kl_loss = 0
       print ('start epoch {epoch}'.format(epoch=epoch))
       for dat in data_batches:
         batch = []
@@ -116,14 +117,19 @@ class Trainer(object):
                                    atom_label).sum(1) + \
               self.bond_label_loss(bond_pred.transpose(2, 3).transpose(1, 2), 
                                    bond_label).sum(1).sum(1) * self.lambd
+        rec = (rec * weights).sum()
         kl = kl_normal(z_mean, t.exp(z_logstd), t.zeros_like(z_mean), t.ones_like(z_logstd)).sum(1)
+        kl = (kl * weights).sum()
         
-        loss = ((rec + kl) * weights).sum()
+        loss = rec + 0.01*kl
         loss.backward()
-        accum_loss += loss
+        accum_rec_loss += rec
+        accum_kl_loss += kl
         optimizer.step()
         self.net.zero_grad()
-      print ('epoch {epoch} loss: {loss}'.format(epoch=epoch, loss=accum_loss.data[0]/n_points))
+      print ('epoch {epoch} loss: {rec_loss}, {kl_loss}'.format(epoch=epoch, 
+          rec_loss=accum_rec_loss.data[0]/n_points,
+          kl_loss=accum_kl_loss.data[0]/n_points))
     return
       
   def predict(self, test_data):
@@ -137,5 +143,9 @@ class Trainer(object):
         for i, item in enumerate(sample):
           sample[i] = item.cuda() # No extra first dimension
       node_feats, pair_feats, A, weights = sample
-      preds.append(self.net.predict(node_feats, pair_feats, A))
+      
+      node_pred, bond_pred = self.net.predict(node_feats, pair_feats, A)
+      node_pred = node_pred.data.to(t.device('cpu')).numpy()
+      bond_pred = bond_pred.data.to(t.device('cpu')).numpy()
+      preds.append((node_pred[0], bond_pred[0, :, :, 1]))
     return preds

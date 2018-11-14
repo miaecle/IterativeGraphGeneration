@@ -16,17 +16,27 @@ from utils.load_molecules import load_molecules
 class Config:
     lr = 0.001
     batch_size = 32
-    max_epoch = 1000
+    max_epoch = 2000
     gpu = True
 opt=Config()
 
-Mols = load_molecules('./data/qm9_subset7.smi')
-train_mols = Mols[:2557]
-valid_mols = Mols[2557:]
+Mols = load_molecules('./data/qm9_subset6.smi')
+n_mols = len(Mols)
+train_mols = Mols[:int(32)]
+valid_mols = Mols[int(0.8*n_mols):]
 
 enc = GraphConvEnc()
 dec = AffineDecoder()
 vae = GraphVAE(enc, dec, gpu=opt.gpu)
 model = Trainer(vae, opt)
 
-model.train(train_mols)
+if __name__ == '__main__':
+  model.train(train_mols)
+  model.save('./temp_save.pth')
+  model.load('./temp_save.pth')
+  train_preds = model.predict(train_mols)
+  print(train_preds[0][1][0, :, :, 1])
+  print(train_mols[0][2])
+  print(train_preds[0][0])
+  print(train_mols[0][0][:, :4])
+  

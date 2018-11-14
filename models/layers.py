@@ -84,12 +84,13 @@ class WeaveLayer(nn.Module):
     AA = self.linear_AA(node_feats)
     PA = self.linear_PA(pair_feats)
     A = self.linear_A_merged(t.cat([AA, PA.sum(1)], 2))
-
+    n_atoms = node_feats.shape[1]
+    
     if self.update_pair:
-      AP_ij = self.linear_AP(t.cat([node_feats.unsqueeze(2).expand(-1, -1, 9, -1), 
-                                    node_feats.unsqueeze(1).expand(-1, 9, -1, -1)], 3))
-      AP_ji = self.linear_AP(t.cat([node_feats.unsqueeze(1).expand(-1, 9, -1, -1), 
-                                    node_feats.unsqueeze(2).expand(-1, -1, 9, -1)], 3))      
+      AP_ij = self.linear_AP(t.cat([node_feats.unsqueeze(2).expand(-1, -1, n_atoms, -1), 
+                                    node_feats.unsqueeze(1).expand(-1, n_atoms, -1, -1)], 3))
+      AP_ji = self.linear_AP(t.cat([node_feats.unsqueeze(1).expand(-1, n_atoms, -1, -1), 
+                                    node_feats.unsqueeze(2).expand(-1, -1, n_atoms, -1)], 3))      
       
       PP = self.linear_PP(pair_feats)
       P = self.linear_P_merged(t.cat([AP_ij + AP_ji, PP], 3))

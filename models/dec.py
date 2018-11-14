@@ -22,11 +22,27 @@ class InnerProductDecoder(nn.Module):
           nn.Linear(self.n_latent_feat, self.n_latent_feat),
           nn.ReLU(True),
           nn.Linear(self.n_latent_feat, self.n_atom_type))
+    self.bond_dec1 = nn.Sequential(
+          nn.Linear(self.n_latent_feat, self.n_latent_feat),
+          nn.ReLU(True),
+          nn.Linear(self.n_latent_feat, self.n_latent_feat),
+          nn.ReLU(True),
+          nn.Linear(self.n_latent_feat, self.n_latent_feat))
+    self.bond_dec2 = nn.Sequential(
+          nn.Linear(self.n_latent_feat, self.n_latent_feat),
+          nn.ReLU(True),
+          nn.Linear(self.n_latent_feat, self.n_latent_feat),
+          nn.ReLU(True),
+          nn.Linear(self.n_latent_feat, 2))
+    
 
   def forward(self, z):
     atom_pred = F.log_softmax(self.atom_dec(z), 2)
-    bond_logit = t.matmul(z, z.transpose(1, 2))
-    bond_logit = t.stack([t.zeros_like(bond_logit), bond_logit], 3)
+    bond_feat = self.bond_dec1(z)
+    n_atoms = z.shape[1]
+    inner_product = bond_feat.unsqueeze(2).expand(-1, -1, n_atoms, -1) *\
+        bond_feat.unsqueeze(1).expand(-1, n_atoms, -1, -1)
+    bond_logit = self.bond_dec2(inner_product)
     bond_pred = F.log_softmax(bond_logit, 3)
     return atom_pred, bond_pred
 
@@ -43,6 +59,10 @@ class AffineDecoder(nn.Module):
           nn.ReLU(True),
           nn.Linear(self.n_latent_feat, self.n_atom_type))
     self.bond_dec = nn.Sequential(
+          nn.Linear(self.n_latent_feat * 2, self.n_latent_feat * 2),
+          nn.ReLU(True),
+          nn.Linear(self.n_latent_feat * 2, self.n_latent_feat * 2),
+          nn.ReLU(True),
           nn.Linear(self.n_latent_feat * 2, self.n_latent_feat * 2),
           nn.ReLU(True),
           nn.Linear(self.n_latent_feat * 2, 2))
