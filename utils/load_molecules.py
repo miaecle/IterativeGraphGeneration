@@ -109,10 +109,12 @@ def load_molecules(path, raw=False, padding=False):
         atom_f = atom_features(mol)
         pair_f = pair_features(mol)
         A = pair_f[:, :, NUM_BOND_FEATURES] # Adjacency Matrix
+        A += np.eye(A.shape[0])
         Mols.append([atom_f, pair_f, A])
-  
+  max_num_atoms = max([m[0].shape[0] for m in Mols])
+  for mol in Mols:
+    mol[0] = np.concatenate([np.eye(max_num_atoms)[:mol[0].shape[0]], mol[0]], 1)
   if padding:
-    max_num_atoms = max([m[0].shape[0] for m in Mols])
     for i, mol in enumerate(Mols):
       n = mol[0].shape[0]
       Mols[i][0] = np.pad(mol[0], ((0, max_num_atoms - n), (0, 0)), 'constant')

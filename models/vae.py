@@ -9,7 +9,7 @@ from torch import nn
 import torch as t
 import torch.nn.functional as F
 import numpy as np
-from layers import kl_normal
+from layers import kl_normal, IterativeRef
 from torch.autograd import Variable
 from torch.optim import Adam
 
@@ -36,8 +36,52 @@ class GraphVAE(nn.Module):
     outs = self.forward(node_feats, pair_feats, A, random=False)
     return t.exp(outs[0]), t.exp(outs[1])
 
+class IterativeRefGraphVAE(nn.Module):
+  def __init__(self, 
+               enc, 
+               dec, 
+               n_iterref=2,
+               n_extra_input=0,
+               gpu=False, 
+               **kwargs):
+    super(IterativeRefGraphVAE, self).__init__(**kwargs)
+    self.enc = enc
+    self.dec = dec
+    self.n_iterref = n_iterref
+    assert self.enc.n_latent_feat == self.dec.n_latent_feat
+    
+    
+    self.n_iterref_input = self.enc.n_latent_feat + n_extra_input
+    self.iterref_layers = []
+    for _ in range(n_iterref):
+      self.iterref_layers.append(IterativeRef(self.enc.n_latent_feat, 
+                                              self.n_iterref_input))
+    self.iterref_layers = nn.ModuleList(self.iterref_layers)
+    self.gpu = gpu
+
+  def forward(self, node_feats, pair_feats, A, random=True):
+    z_mean, z_logstd = self.enc(node_feats, pair_feats, A)
+    if random:
+      r = t.randn_like(z_mean)
+      if self.gpu: r = r.cuda()
+      z = z_mean + r * t.exp(z_logstd)
+    else:
+      z = z_mean
+    
+    z_intermediate = z
+    for layer in self.iterref_layers:
+      z_intermediate = layer(z, z_intermediate)
+      
+    atom_pred, bond_pred = self.dec(z_intermediate)
+    return atom_pred, bond_pred, z_mean, z_logstd
+
+  def predict(self, node_feats, pair_feats, A):
+    outs = self.forward(node_feats, pair_feats, A, random=False)
+    return t.exp(outs[0]), t.exp(outs[1])
+
+
 class Trainer(object):
-  def __init__(self, net, opt, lambd=0.1):
+  def __init__(self, net, opt, lambd=0.1, kl_rate=1.):
     self.net = net
     self.atom_label_loss = nn.NLLLoss(reduce=False)
     self.bond_label_loss = nn.NLLLoss(reduce=False)
@@ -47,6 +91,7 @@ class Trainer(object):
       self.atom_label_loss = self.atom_label_loss.cuda()
       self.bond_label_loss = self.bond_label_loss.cuda()
     self.lambd = lambd
+    self.kl_rate = kl_rate
   
   def assemble_batch(self, data, sample_weights=None, batch_size=None):
     if batch_size is None:
@@ -121,7 +166,7 @@ class Trainer(object):
         kl = kl_normal(z_mean, t.exp(z_logstd), t.zeros_like(z_mean), t.ones_like(z_logstd)).sum(1)
         kl = (kl * weights).sum()
         
-        loss = rec + 0.01*kl
+        loss = rec + self.kl_rate*kl
         loss.backward()
         accum_rec_loss += rec
         accum_kl_loss += kl
