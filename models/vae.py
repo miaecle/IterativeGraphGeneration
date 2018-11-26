@@ -12,6 +12,9 @@ import numpy as np
 from layers import kl_normal
 from torch.autograd import Variable
 from torch.optim import Adam
+import mpm 
+import scipy.optimize
+
 
 class GraphVAE(nn.Module):
   def __init__(self, enc, dec, gpu=False, **kwargs):
@@ -20,8 +23,12 @@ class GraphVAE(nn.Module):
     self.dec = dec
     assert self.enc.n_latent_feat == self.dec.n_latent_feat
     self.gpu = gpu
+    self.max_num_nodes = 6# TODO: reference NUM_ATOM_FEATURES, also change name to num_feat
+
   
   def forward(self, node_feats, pair_feats, A, random=True):
+    # print('shapes', 'node_feats, pair_feats, A')
+    # print(node_feats.shape, pair_feats.shape, A.shape)
     z_mean, z_logstd = self.enc(node_feats, pair_feats, A)
     if random:
       r = t.randn_like(z_mean)
@@ -29,7 +36,18 @@ class GraphVAE(nn.Module):
       z = z_mean + r * t.exp(z_logstd)
     else:
       z = z_mean
+
     atom_pred, bond_pred = self.dec(z)
+
+    # recon_adj_lower = mpm.recover_adj_lower(atom_pred)
+    # recon_adj_tensor = mpm.recover_full_adj_from_lower(recon_adj_lower)
+
+    # Find the similarity matrix, S(i,j, a,b) that is of size: 
+    #(self.max_num_nodes, self.max_num_nodes, self.max_num_nodes,self.max_num_nodes)
+
+
+    # print('shapes', 'atom_pred, bond_pred')
+    # print(atom_pred.shape, bond_pred.shape)
     return atom_pred, bond_pred, z_mean, z_logstd
   
   def predict(self, node_feats, pair_feats, A):
@@ -110,13 +128,65 @@ class Trainer(object):
             
         node_feats, pair_feats, A, weights = batch
         atom_pred, bond_pred, z_mean, z_logstd = self.net(node_feats, pair_feats, A, random=True)
-        atom_label = t.argmax(batch[0][:, :, :4], 2).long()
-        bond_label = batch[2].long()
+        # decoding: 
+        # node_feats size: batch_size x num_nodes x num_node_feat (32 x6x 23) 
+        # atom_pred size: batch_size x num_nodes x num_node_classes (32 x6x 4) 
+        # pair_feats size: batch_size x num_nodes x num_nodes x num_pair_feat (32x6x6x15)
+        # bond_pred size: batch_size x num_nodes x num_edge classes (32x6x6x2)
 
-        rec = self.atom_label_loss(atom_pred.transpose(1, 2), 
-                                   atom_label).sum(1) + \
-              self.bond_label_loss(bond_pred.transpose(2, 3).transpose(1, 2), 
-                                   bond_label).sum(1).sum(1) * self.lambd
+        atom_label = t.argmax(node_feats[:, :, :4], 2).float() #(32, 6)
+        bond_label = A.float()  #(32, 6, 6), 
+        bond_label_deg = bond_label.sum(2)# 32x6 -
+        bond_label = bond_label.clone() + t.diag(t.ones(self.net.max_num_nodes)).unsqueeze(0)  #need to make diagonals one
+        bond_label = bond_label.float() #(32, 6, 6), 
+        bond_pred_bin = t.argmax(t.exp(bond_pred.clone()),3).float() # 32x 6x6batch_size x num_nodes x num_nodes (last two dim are A for each batch)
+        bond_pred_deg = bond_pred_bin.sum(2).float() # 32x6
+
+        # print('weights', weights.shape) # 32
+        # # print('atom_pred_bin', atom_pred_bin.shape) # (32, 6)
+        # idx = 0
+        # # print(atom_pred_bin[idx,:])
+        # print('bond_pred_bin', bond_pred_bin.shape) #(32, 6, 6)
+        # print(bond_pred_bin[idx,:,:])
+        # print(t.exp(bond_pred[idx,:,:,0]))
+        # print(t.exp(bond_pred[idx,:,:,1]))
+        # print('atom_label', atom_label.shape) #(32, 6)
+        # print('bond_label', bond_label.shape) #(32, 6, 6)
+        # print(bond_label[idx,:,:])
+        # print('bond_label_deg', bond_label_deg[idx,:])
+        # print('bond_pred_deg', bond_pred_deg[idx,:])
+
+        # get similarity matrix (32,6,6,6,6)
+        S = mpm.edge_similarity_matrix( A_label=bond_label, A_pred=t.exp(bond_pred[:,:,:,1]), 
+                            feat_label = bond_label_deg, feat_pred =bond_pred_deg)
+        # S = mpm.edge_similarity_matrix( A_label=bond_label[:1,:2,:2], A_pred=t.exp(bond_pred[:1,:2,:2,1]), 
+        #                     feat_label = bond_label_deg[:1,:2], feat_pred =bond_pred_deg[:1,:2])
+
+
+        # initialization quadratic programming task
+        batch_size = atom_label.shape[0]
+        init_corr = 1 / self.net.max_num_nodes
+        init_assignment = t.ones(batch_size, self.net.max_num_nodes, self.net.max_num_nodes) * init_corr
+        assignment = mpm.mpm(init_assignment, S,max_iters=1)
+        # print('Assignment: ', assignment)
+
+        # matching
+        for idx in range(batch_size):
+          row_ind, col_ind = scipy.optimize.linear_sum_assignment(-assignment[idx,:,:].detach().numpy())
+          print('row: ', row_ind)
+          print('col: ', col_ind)
+
+          atom_label[idx,:] = mpm.permute(atom_label[idx,:], row_ind, col_ind)
+          # print('original: ', bond_label[idx,:,:])
+          bond_label[idx,:,:] = mpm.permute(bond_label[idx,:,:], row_ind, col_ind)
+          # print('permuted: ', bond_label[idx,:,:])
+
+
+
+        rec = self.atom_label_loss(atom_pred.transpose(1, 2), # 32x4x6
+                                   atom_label.long()).sum(1) + \
+              self.bond_label_loss(bond_pred.transpose(2, 3).transpose(1, 2), #32x2x6x6
+                                   bond_label.long()).sum(1).sum(1) * self.lambd
         rec = (rec * weights).sum()
         kl = kl_normal(z_mean, t.exp(z_logstd), t.zeros_like(z_mean), t.ones_like(z_logstd)).sum(1)
         kl = (kl * weights).sum()
