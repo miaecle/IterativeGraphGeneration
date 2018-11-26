@@ -99,11 +99,14 @@ class IterativeRefGraphVAE(nn.Module):
 
 
 class Trainer(object):
-  def __init__(self, net, opt, lambd=0.1, kl_rate=1.):
+  def __init__(self, net, opt, mpm=True, lambd=0.1, kl_rate=1.):
     self.net = net
     self.atom_label_loss = nn.NLLLoss(reduce=False)
     self.bond_label_loss = nn.NLLLoss(reduce=False)
     self.opt = opt
+
+    self.mpm = opt.mpm
+
     if self.opt.gpu:
       self.net = self.net.cuda()
       self.atom_label_loss = self.atom_label_loss.cuda()
@@ -173,60 +176,12 @@ class Trainer(object):
             
         node_feats, pair_feats, A, weights = batch
         atom_pred, bond_pred, z_mean, z_logstd = self.net(node_feats, pair_feats, A, random=True)
-        # decoding: 
-        # node_feats size: batch_size x num_nodes x num_node_feat (32 x6x 23) 
-        # atom_pred size: batch_size x num_nodes x num_node_classes (32 x6x 4) 
-        # pair_feats size: batch_size x num_nodes x num_nodes x num_pair_feat (32x6x6x15)
-        # bond_pred size: batch_size x num_nodes x num_edge classes (32x6x6x2)
 
-        atom_label = t.argmax(node_feats[:, :, :4], 2).float() #(32, 6)
-        bond_label = A.float()  #(32, 6, 6), 
-        bond_label_deg = bond_label.sum(2)# 32x6 -
-        bond_label = bond_label.clone() + t.diag(t.ones(self.net.max_num_nodes)).unsqueeze(0)  #need to make diagonals one
-        bond_label = bond_label.float() #(32, 6, 6), 
-        bond_pred_bin = t.argmax(t.exp(bond_pred.clone()),3).float() # 32x 6x6batch_size x num_nodes x num_nodes (last two dim are A for each batch)
-        bond_pred_deg = bond_pred_bin.sum(2).float() # 32x6
-
-        # print('weights', weights.shape) # 32
-        # # print('atom_pred_bin', atom_pred_bin.shape) # (32, 6)
-        # idx = 0
-        # # print(atom_pred_bin[idx,:])
-        # print('bond_pred_bin', bond_pred_bin.shape) #(32, 6, 6)
-        # print(bond_pred_bin[idx,:,:])
-        # print(t.exp(bond_pred[idx,:,:,0]))
-        # print(t.exp(bond_pred[idx,:,:,1]))
-        # print('atom_label', atom_label.shape) #(32, 6)
-        # print('bond_label', bond_label.shape) #(32, 6, 6)
-        # print(bond_label[idx,:,:])
-        # print('bond_label_deg', bond_label_deg[idx,:])
-        # print('bond_pred_deg', bond_pred_deg[idx,:])
-
-        # get similarity matrix (32,6,6,6,6)
-        S = mpm.edge_similarity_matrix( A_label=bond_label, A_pred=t.exp(bond_pred[:,:,:,1]), 
-                            feat_label = bond_label_deg, feat_pred =bond_pred_deg)
-        # S = mpm.edge_similarity_matrix( A_label=bond_label[:1,:2,:2], A_pred=t.exp(bond_pred[:1,:2,:2,1]), 
-        #                     feat_label = bond_label_deg[:1,:2], feat_pred =bond_pred_deg[:1,:2])
-
-
-        # initialization quadratic programming task
-        batch_size = atom_label.shape[0]
-        init_corr = 1 / self.net.max_num_nodes
-        init_assignment = t.ones(batch_size, self.net.max_num_nodes, self.net.max_num_nodes) * init_corr
-        assignment = mpm.mpm(init_assignment, S,max_iters=1)
-        # print('Assignment: ', assignment)
-
-        # matching
-        for idx in range(batch_size):
-          row_ind, col_ind = scipy.optimize.linear_sum_assignment(-assignment[idx,:,:].detach().numpy())
-          print('row: ', row_ind)
-          print('col: ', col_ind)
-
-          atom_label[idx,:] = mpm.permute(atom_label[idx,:], row_ind, col_ind)
-          # print('original: ', bond_label[idx,:,:])
-          bond_label[idx,:,:] = mpm.permute(bond_label[idx,:,:], row_ind, col_ind)
-          # print('permuted: ', bond_label[idx,:,:])
-
-
+        if self.mpm:
+          atom_label, bond_label = self.match_pool_matching(atom_pred, bond_pred, node_feats, A)
+        else:
+          atom_label = t.argmax(node_feats[:, :, :4], 2).float() #(32, 6)
+          bond_label = A.float()  #(32, 6, 6), 
 
         rec = self.atom_label_loss(atom_pred.transpose(1, 2), # 32x4x6
                                    atom_label.long()).sum(1) + \
@@ -264,3 +219,41 @@ class Trainer(object):
       bond_pred = bond_pred.data.to(t.device('cpu')).numpy()
       preds.append((node_pred[0], bond_pred[0, :, :, 1]))
     return preds
+
+  def match_pool_matching(self, atom_pred, bond_pred, node_feats, A,max_iters=50):
+    # decoding: 
+    # node_feats size: batch_size x num_nodes x num_node_feat (32 x6x 23) 
+    # atom_pred size: batch_size x num_nodes x num_node_classes (32 x6x 4) 
+    # pair_feats size: batch_size x num_nodes x num_nodes x num_pair_feat (32x6x6x15)
+    # bond_pred size: batch_size x num_nodes x num_edge classes (32x6x6x2)
+
+    atom_label = t.argmax(node_feats[:, :, :4], 2).float() #(32, 6)
+    bond_label = A.float()  #(32, 6, 6), 
+    bond_label_deg = bond_label.sum(2)# 32x6 -
+    bond_label_diag = bond_label.clone() #+ t.diag(t.ones(self.net.max_num_nodes)).unsqueeze(0)  #need to make diagonals one
+    bond_label_diag = bond_label_diag.float() #(32, 6, 6), 
+    bond_pred_bin = t.argmax(t.exp(bond_pred),3).float() # 32x 6x6batch_size x num_nodes x num_nodes (last two dim are A for each batch)
+    bond_pred_deg = bond_pred_bin.sum(2).float() # 32x6
+    # print('finished getting feats')
+    # get similarity matrix (32,6,6,6,6)
+    S = mpm.edge_similarity_matrix( A_label=bond_label_diag, A_pred=t.exp(bond_pred[:,:,:,1]), 
+                        feat_label = bond_label_deg, feat_pred =bond_pred_deg)
+    # print('S', S.shape)
+
+    # initialization quadratic programming task
+    batch_size = atom_label.shape[0]
+    init_corr = 1 / self.net.max_num_nodes
+    init_assignment = t.ones(batch_size, self.net.max_num_nodes, self.net.max_num_nodes) * init_corr
+    assignment = mpm.mpm(init_assignment, S,max_iters=max_iters)
+    # print('Assignment: ', assignment)
+
+    # matching
+    for idx in range(batch_size):
+      row_ind, col_ind = scipy.optimize.linear_sum_assignment(-assignment[idx,:,:].detach().numpy())
+      if any(row_ind!=col_ind):
+        print(row_ind,col_ind)
+      atom_label[idx,:] = mpm.permute(atom_label[idx,:], row_ind, col_ind)
+      bond_label_diag[idx,:,:] = mpm.permute(bond_label_diag[idx,:,:], row_ind, col_ind)
+    # print('after matching')
+    # raise
+    return atom_label, bond_label_diag

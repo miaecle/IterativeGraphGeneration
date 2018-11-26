@@ -19,6 +19,7 @@ class Config:
     batch_size = 128
     max_epoch = 2000
     gpu = True
+    mpm = False
 opt=Config()
 
 subset = 6
