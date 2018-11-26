@@ -86,7 +86,7 @@ class GraphConvEnc(nn.Module):
 
   def __init__(self,
                n_node_feat=23,
-               n_graphconv=[64, 64],
+               n_graphconv=[32, 64, 128],
                n_latent_feat=128,
                **kwargs):
     """

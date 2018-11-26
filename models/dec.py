@@ -76,3 +76,4 @@ class AffineDecoder(nn.Module):
                      z.unsqueeze(2).expand(-1, -1, n_atoms, -1)], 3)
     bond_pred = F.log_softmax(self.bond_dec(bond_ij) + self.bond_dec(bond_ji), 3)
     return atom_pred, bond_pred
+

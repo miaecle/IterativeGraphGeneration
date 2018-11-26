@@ -14,7 +14,7 @@ import numpy as np
 class WeaveLayer(nn.Module):
 
   def __init__(self,
-               n_atom_input_feat=23,
+               n_atom_input_feat,
                n_pair_input_feat=15,
                n_atom_output_feat=64,
                n_pair_output_feat=64,
@@ -101,7 +101,7 @@ class WeaveLayer(nn.Module):
 
 class GraphConvLayer(nn.Module):
   def __init__(self,
-               n_atom_input_feat=23,
+               n_atom_input_feat,
                n_hidden=64,               
                **kwargs):
     """
@@ -127,6 +127,41 @@ class GraphConvLayer(nn.Module):
     x = x + self.bias
     outputs = F.relu(x)
     return outputs
+ 
+
+class IterativeRef(nn.Module):
+  def __init__(self,
+               n_latent_feat=128,
+               n_input_feat=128,
+               n_hidden=128,
+               **kwargs):
+    super(IterativeRef, self).__init__(**kwargs)
+    self.n_latent_feat = n_latent_feat
+    self.n_input_feat = n_input_feat
+    self.n_hidden = n_hidden
+    self.z_dec = nn.Sequential(
+          nn.Linear(self.n_latent_feat, self.n_latent_feat),
+          nn.ReLU(True),
+          nn.Linear(self.n_latent_feat, self.n_hidden))
+    
+    self.x_dec = nn.Sequential(
+          nn.Linear(self.n_input_feat, self.n_input_feat),
+          nn.ReLU(True),
+          nn.Linear(self.n_input_feat, self.n_input_feat),
+          nn.ReLU(True),
+          nn.Linear(self.n_input_feat, self.n_latent_feat))
+
+  def forward(self, z, x=None):
+    z2 = self.z_dec(z)
+    z2 = z2/z2.norm(2, dim=-1, keepdim=True)
+    o = t.ones_like(z2)[:, :, 0:1]
+    
+    A_hat = t.matmul(z2, z2.transpose(1, 2).contiguous()) + \
+            t.matmul(o, o.transpose(1, 2).contiguous())/o.shape[1]
+    if x is None:
+      x = z
+    out = t.matmul(A_hat, self.x_dec(x))
+    return out
 
     
 def kl_normal(qm, qv, pm, pv):
