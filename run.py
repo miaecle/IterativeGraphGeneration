@@ -15,14 +15,14 @@ from utils.load_molecules import load_molecules
 from utils.metrics import eval_reconstruction_rate
 
 class Config:
-    lr = 0.001
+    lr = 0.0001
     batch_size = 128
     max_epoch = 2000
     gpu = True
 opt=Config()
 
 
-subset = 6
+subset = 9
 Mols = load_molecules('./data/qm9_subset' + str(subset) + '.smi')
 n_mols = len(Mols)
 np.random.seed(123)
@@ -34,15 +34,15 @@ test_mols = Mols[int(0.9*n_mols):]
 enc = GraphConvEnc(n_node_feat=Mols[0][0].shape[1])  
 dec = AffineDecoder()
 vae = GraphVAE(enc, dec, gpu=opt.gpu)
-model = Trainer(vae, opt, lambd=0.5, kl_rate=0.)
+model = Trainer(vae, opt, lambd=0.5, kl_rate=0.1)
 
 best_valid_score = 0.
-train_scores = []
 valid_scores = []
 if __name__ == '__main__':
   for i in range(100):
-    model.train(train_mols, n_epochs=10)
-    train_scores.append(eval_reconstruction_rate(train_mols, model.predict(train_mols)))
+    if i>50:
+      model.opt.lr = 1e-5
+    model.train(train_mols, n_epochs=1)
     valid_scores.append(eval_reconstruction_rate(valid_mols, model.predict(valid_mols)))
     if valid_scores[-1] > best_valid_score:
       best_valid_score = valid_scores[-1]

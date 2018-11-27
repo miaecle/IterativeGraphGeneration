@@ -92,6 +92,7 @@ class Trainer(object):
       self.bond_label_loss = self.bond_label_loss.cuda()
     self.lambd = lambd
     self.kl_rate = kl_rate
+    self.global_step = 0
   
   def assemble_batch(self, data, sample_weights=None, batch_size=None):
     if batch_size is None:
@@ -144,6 +145,7 @@ class Trainer(object):
     for epoch in range(n_epochs):      
       accum_rec_loss = 0
       accum_kl_loss = 0
+      n_samples = 0
       print ('start epoch {epoch}'.format(epoch=epoch))
       for dat in data_batches:
         batch = []
@@ -168,13 +170,19 @@ class Trainer(object):
         
         loss = rec + self.kl_rate*kl
         loss.backward()
+        self.global_step += 1
         accum_rec_loss += rec
         accum_kl_loss += kl
+        n_samples += t.sign(weights).sum()
+        if self.global_step%128 == 0:
+          print ('Step {s} loss: {rec_loss}, {kl_loss}'.format(s=self.global_step, 
+            rec_loss=accum_rec_loss.data[0]/n_samples,
+            kl_loss=accum_kl_loss.data[0]/n_samples))
+          accum_rec_loss = 0
+          accum_kl_loss = 0
+          n_samples = 0
         optimizer.step()
         self.net.zero_grad()
-      print ('epoch {epoch} loss: {rec_loss}, {kl_loss}'.format(epoch=epoch, 
-          rec_loss=accum_rec_loss.data[0]/n_points,
-          kl_loss=accum_kl_loss.data[0]/n_points))
     return
       
   def predict(self, test_data):
