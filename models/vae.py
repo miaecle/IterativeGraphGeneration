@@ -49,6 +49,13 @@ class GraphVAE(nn.Module):
     # print('shapes', 'atom_pred, bond_pred')
     # print(atom_pred.shape, bond_pred.shape)
     return atom_pred, bond_pred, z_mean, z_logstd
+
+  def sample(self, z):
+    z_intermediate = z
+    for layer in self.iterref_layers:
+      z_intermediate = layer(z, z_intermediate)
+    atom_pred, bond_pred = self.dec(z_intermediate)
+    return atom_pred, bond_pred
   
   def predict(self, node_feats, pair_feats, A):
     outs = self.forward(node_feats, pair_feats, A, random=False)
@@ -93,6 +100,13 @@ class IterativeRefGraphVAE(nn.Module):
     atom_pred, bond_pred = self.dec(z_intermediate)
     return atom_pred, bond_pred, z_mean, z_logstd
 
+  def sample(self, z):
+    z_intermediate = z
+    for layer in self.iterref_layers:
+      z_intermediate = layer(z, z_intermediate)
+    atom_pred, bond_pred = self.dec(z_intermediate)
+    return atom_pred, bond_pred
+    
   def predict(self, node_feats, pair_feats, A):
     outs = self.forward(node_feats, pair_feats, A, random=False)
     return t.exp(outs[0]), t.exp(outs[1])
@@ -151,6 +165,17 @@ class Trainer(object):
     s_dict = t.load(path, map_location=lambda storage, loc: storage)
     self.net.load_state_dict(s_dict)
   
+  def sample(self, n, size):
+    out_mols = []
+    for _ in range(n):
+      z = t.randn(1, size, self.net.dec.n_latent_feat)
+      if self.opt.gpu:
+        z = z.cuda()
+      atom_pred, bond_pred = self.net.sample(z)
+    out_mols.append((np.exp(atom_pred.detach().cpu().numpy()), 
+                     np.exp(bond_pred.detach().cpu().numpy())))
+    return out_mols
+    
   def train(self, train_data, sample_weights=None, n_epochs=None, **kwargs):
     
     optimizer = Adam(self.net.parameters(),
