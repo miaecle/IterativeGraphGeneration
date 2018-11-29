@@ -3,7 +3,7 @@
 """
 Created on Sun Nov 11 23:19:20 2018
 
-@author: zqwu
+@author: zqwu, mguo123
 """
 from torch import nn
 import torch as t
@@ -210,6 +210,7 @@ class Trainer(object):
           atom_label = t.argmax(node_feats[:, :, :4], 2).float() #(32, 6)
           bond_label = A.float()  #(32, 6, 6), 
 
+
         rec = self.atom_label_loss(atom_pred.transpose(1, 2), # 32x4x6
                                    atom_label.long()).sum(1) + \
               self.bond_label_loss(bond_pred.transpose(2, 3).transpose(1, 2), #32x2x6x6
@@ -263,7 +264,7 @@ class Trainer(object):
     atom_label = t.argmax(node_feats[:, :, :4], 2).float() #(32, 6)
     bond_label = A.float()  #(32, 6, 6), 
     bond_label_deg = bond_label.sum(2)# 32x6 -
-    bond_label_diag = bond_label.clone() #+ t.diag(t.ones(self.net.max_num_nodes)).unsqueeze(0)  #need to make diagonals one
+    bond_label_diag = bond_label.clone() 
     bond_label_diag = bond_label_diag.float() #(32, 6, 6), 
     bond_pred_bin = t.argmax(t.exp(bond_pred),3).float() # 32x 6x6batch_size x num_nodes x num_nodes (last two dim are A for each batch)
     bond_pred_deg = bond_pred_bin.sum(2).float() # 32x6

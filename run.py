@@ -3,7 +3,7 @@
 """
 Created on Mon Nov 12 17:31:27 2018
 
-@author: zqwu
+@author: zqwu, mguo123
 """
 import os
 import numpy as np
@@ -18,12 +18,12 @@ class Config:
     lr = 0.0001
     batch_size = 128
     max_epoch = 2000
-    gpu = True
+    gpu = False
     mpm = False
 opt=Config()
 
 
-subset = 9
+subset = 6
 Mols = load_molecules('./data/qm9_subset' + str(subset) + '.smi')
 n_mols = len(Mols)
 np.random.seed(123)

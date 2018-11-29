@@ -1,3 +1,10 @@
+#!/usr/bin/env python2
+# -*- coding: utf-8 -*-
+"""
+Created on Sun Nov 11 23:19:20 2018
+
+@author: mguo123
+"""
 
 # max-pool matching from cho 2014, simonovsky 2018 (GRAPHVAE), and Graph RNN 
 import numpy as np
