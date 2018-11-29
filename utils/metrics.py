@@ -13,10 +13,17 @@ def eval_reconstruction_rate(mols, preds):
   assert len(preds) == n_samples
   correct_ct = 0
   for mol, pred in zip(mols, preds):
+    # labels
     node_label = np.argmax(mol[0][:, :4], 1)
+    bond_type_label = np.argmax(mol[1][:, :, :4], 2)   # 6x6 output
     A_label = mol[2]
+    #preds
     node_pred = np.argmax(pred[0], 1)
-    A_pred = (pred[1] > 0.5)*1
-    if np.allclose(A_label, A_pred) and np.allclose(node_pred, node_label):
+    bond_type_pred = np.argmax(pred[1], 2)    
+    A_pred = (pred[2] > 0.5)*1
+    #check
+    if np.all([np.allclose(A_label, A_pred), 
+      np.allclose(bond_type_label, bond_type_pred), 
+      np.allclose(node_pred, node_label)]):
       correct_ct += 1
   return float(correct_ct)/n_samples

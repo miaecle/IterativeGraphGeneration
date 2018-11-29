@@ -102,7 +102,10 @@ class WeaveLayer(nn.Module):
 class GraphConvLayer(nn.Module):
   def __init__(self,
                n_atom_input_feat,
-               n_hidden=64,               
+               n_pair_input_feat,
+               n_hidden=64, 
+               update_pair=True, 
+               weave = False,             
                **kwargs):
     """
     Parameters
@@ -115,18 +118,72 @@ class GraphConvLayer(nn.Module):
     super(GraphConvLayer, self).__init__(**kwargs)
     self.n_hidden = n_hidden
     self.n_atom_input_feat = n_atom_input_feat
+    self.n_pair_input_feat = n_pair_input_feat
+    self.update_pair = update_pair
+    self.weave = weave
     self.linear_AA = nn.Linear(self.n_atom_input_feat, self.n_hidden, bias=False)
+    if self.weave:
+      self.linear_PA = nn.Linear(self.n_pair_input_feat, self.n_hidden, bias=False)
+
+      self.linear_A_merged = nn.Sequential(
+          nn.Linear(2*self.n_hidden, self.n_hidden),
+          nn.ReLU(True))
+
+    if self.update_pair==True:
+      self.linear_PP = nn.Sequential(
+          nn.Linear(self.n_pair_input_feat, self.n_hidden),
+          nn.ReLU(True))
+      if self.weave:
+        self.linear_AP = nn.Sequential(
+            nn.Linear(self.n_atom_input_feat * 2, self.n_hidden),
+            nn.ReLU(True))
+         
+        self.linear_P_merged = nn.Sequential(
+            nn.Linear(self.n_hidden, self.n_hidden),
+            nn.ReLU(True))
+
     self.bias = nn.Parameter(t.zeros(self.n_hidden), requires_grad=True)
 
-  def forward(self, node_feats, A):
+  def forward(self, node_feats, pair_feats, A):
     """ node_feats: batch_size * n_nodes * node_feat
         A: batch_size * n_nodes * n_nodes
     """
-    x = self.linear_AA(node_feats)
-    x = t.matmul(A, x)
-    x = x + self.bias
-    outputs = F.relu(x)
-    return outputs
+    # print(node_feats.shape, pair_feats.shape, A.shape)
+    # print(self.n_atom_input_feat, self.n_pair_input_feat)
+
+    # x_AP = self.linear_AA(node_feats)
+
+    # get 
+    atom_module = self.linear_AA(node_feats)
+    if self.weave:
+      PA = self.linear_PA(pair_feats)
+      atom_module = self.linear_A_merged(t.cat([atom_module, PA.sum(1)], 2))
+      n_atoms = node_feats.shape[1]
+    
+    if self.update_pair:
+      pair_module = self.linear_PP(pair_feats)
+      if self.weave:
+        AP_ij = self.linear_AP(t.cat([node_feats.unsqueeze(2).expand(-1, -1, n_atoms, -1), 
+                                      node_feats.unsqueeze(1).expand(-1, n_atoms, -1, -1)], 3))
+        AP_ji = self.linear_AP(t.cat([node_feats.unsqueeze(1).expand(-1, n_atoms, -1, -1), 
+                                      node_feats.unsqueeze(2).expand(-1, -1, n_atoms, -1)], 3))      
+        pair_module = self.linear_P_merged(t.cat([AP_ij + AP_ji, pair_module], 3))
+    else:
+      pair_module = pair_feats
+
+
+    atom_x = t.matmul(A, atom_module) 
+    atom_x = atom_x + self.bias
+    atom_y = F.relu(atom_x)
+    # print('atom_y', atom_y.shape)
+    # print('atom_module', atom_module.shape)
+    # print('pair_module', pair_module.shape)
+    # print('A.unsqueeze(-1)', A.unsqueeze(-1).shape)
+    
+    pair_x = A.unsqueeze(-1) * pair_module
+    pair_x = pair_x + self.bias
+    pair_y = F.relu(pair_x)
+    return atom_y, pair_y
  
 
 class IterativeRef(nn.Module):

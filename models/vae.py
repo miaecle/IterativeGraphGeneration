@@ -37,7 +37,7 @@ class GraphVAE(nn.Module):
     else:
       z = z_mean
 
-    atom_pred, bond_pred = self.dec(z)
+    atom_pred, bond_type_pred, bond_pred = self.dec(z)
 
     # recon_adj_lower = mpm.recover_adj_lower(atom_pred)
     # recon_adj_tensor = mpm.recover_full_adj_from_lower(recon_adj_lower)
@@ -48,18 +48,18 @@ class GraphVAE(nn.Module):
 
     # print('shapes', 'atom_pred, bond_pred')
     # print(atom_pred.shape, bond_pred.shape)
-    return atom_pred, bond_pred, z_mean, z_logstd
+    return atom_pred, bond_type_pred, bond_pred, z_mean, z_logstd
 
   def sample(self, z):
     z_intermediate = z
     for layer in self.iterref_layers:
       z_intermediate = layer(z, z_intermediate)
-    atom_pred, bond_pred = self.dec(z_intermediate)
-    return atom_pred, bond_pred
+    atom_pred, bond_type_pred, bond_pred = self.dec(z_intermediate)
+    return atom_pred, bond_type_pred, bond_pred
   
   def predict(self, node_feats, pair_feats, A):
     outs = self.forward(node_feats, pair_feats, A, random=False)
-    return t.exp(outs[0]), t.exp(outs[1])
+    return t.exp(outs[0]), t.exp(outs[1]), t.exp(outs[2])
 
 class IterativeRefGraphVAE(nn.Module):
   def __init__(self, 
@@ -97,25 +97,26 @@ class IterativeRefGraphVAE(nn.Module):
     for layer in self.iterref_layers:
       z_intermediate = layer(z, z_intermediate)
       
-    atom_pred, bond_pred = self.dec(z_intermediate)
-    return atom_pred, bond_pred, z_mean, z_logstd
+    atom_pred, bond_type_pred, bond_pred = self.dec(z_intermediate)
+    return atom_pred, bond_type_pred, bond_pred, z_mean, z_logstd
 
   def sample(self, z):
     z_intermediate = z
     for layer in self.iterref_layers:
       z_intermediate = layer(z, z_intermediate)
-    atom_pred, bond_pred = self.dec(z_intermediate)
-    return atom_pred, bond_pred
+    atom_pred, bond_type_pred, bond_pred = self.dec(z_intermediate)
+    return atom_pred, bond_type_pred, bond_pred
     
   def predict(self, node_feats, pair_feats, A):
     outs = self.forward(node_feats, pair_feats, A, random=False)
-    return t.exp(outs[0]), t.exp(outs[1])
+    return t.exp(outs[0]), t.exp(outs[1]), t.exp(outs[2])
 
 
 class Trainer(object):
-  def __init__(self, net, opt, mpm=True, lambd=0.1, kl_rate=1.):
+  def __init__(self, net, opt, lambd=0.1, kl_rate=1.):
     self.net = net
     self.atom_label_loss = nn.NLLLoss(reduce=False)
+    self.bond_type_label_loss = nn.NLLLoss(reduce=False)
     self.bond_label_loss = nn.NLLLoss(reduce=False)
     self.opt = opt
 
@@ -124,6 +125,7 @@ class Trainer(object):
     if self.opt.gpu:
       self.net = self.net.cuda()
       self.atom_label_loss = self.atom_label_loss.cuda()
+      self.bond_type_label_loss = self.bond_type_label_loss.cuda()
       self.bond_label_loss = self.bond_label_loss.cuda()
     self.lambd = lambd
     self.kl_rate = kl_rate
@@ -192,7 +194,7 @@ class Trainer(object):
       accum_rec_loss = 0
       accum_kl_loss = 0
       n_samples = 0
-      print ('start epoch {epoch}'.format(epoch=epoch))
+      print ('start epoch %d' % epoch)
       for dat in data_batches:
         batch = []
         for i, item in enumerate(dat):
@@ -202,17 +204,29 @@ class Trainer(object):
             batch[i] = item.cuda()
             
         node_feats, pair_feats, A, weights = batch
-        atom_pred, bond_pred, z_mean, z_logstd = self.net(node_feats, pair_feats, A, random=True)
+        atom_pred, bond_type_pred, bond_pred, z_mean, z_logstd = self.net(node_feats, pair_feats, A, random=True)
+        # print(atom_pred.shape, bond_type_pred.shape, bond_pred.shape) #((128, 6, 4), (128, 6, 6, 4), (128, 6, 6, 2))
 
         if self.mpm:
-          atom_label, bond_label = self.match_pool_matching(atom_pred, bond_pred, node_feats, A)
+          atom_label, bond_type_label, bond_label = self.match_pool_matching(atom_pred, bond_pred, node_feats, A)
         else:
           atom_label = t.argmax(node_feats[:, :, :4], 2).float() #(32, 6)
+          bond_type_label = t.argmax(pair_feats[:,:, :, :4], 3).float() # 32,6x6
           bond_label = A.float()  #(32, 6, 6), 
+
+
+        # print('atom_pred', atom_pred.transpose(1, 2).shape) # (batch, 4, 6)
+        # print('atom_label', atom_label.long().shape) #(batch, 6)
+        # print('bond_type_pred', bond_type_pred.transpose(2, 3).transpose(1, 2).shape) #(batch, 4, 6, 6)
+        # print('bond_type_label', bond_type_label.long().shape) #(batch, 6, 6))
+        # print( 'bond_pred', bond_pred.transpose(2, 3).transpose(1, 2).shape) #(batch, 2, 6, 6)
+        # print('bond_label', bond_label.long().shape) #(batch, 6, 6)
 
 
         rec = self.atom_label_loss(atom_pred.transpose(1, 2), # 32x4x6
                                    atom_label.long()).sum(1) + \
+              self.atom_label_loss(bond_type_pred.transpose(2, 3).transpose(1, 2), #32x4x6x6
+                                   bond_type_label.long()).sum(1).sum(1) + \
               self.bond_label_loss(bond_pred.transpose(2, 3).transpose(1, 2), #32x2x6x6
                                    bond_label.long()).sum(1).sum(1) * self.lambd
         rec = (rec * weights).sum()
@@ -226,6 +240,7 @@ class Trainer(object):
         accum_kl_loss += kl
         n_samples += t.sign(weights).sum()
         if self.global_step%128 == 0:
+        # if self.global_step%1 == 0:
           print ('Step {s} loss: {rec_loss}, {kl_loss}'.format(s=self.global_step, 
             rec_loss=accum_rec_loss.data[0]/n_samples,
             kl_loss=accum_kl_loss.data[0]/n_samples))
@@ -248,10 +263,11 @@ class Trainer(object):
           sample[i] = item.cuda() # No extra first dimension
       node_feats, pair_feats, A, weights = sample
       
-      node_pred, bond_pred = self.net.predict(node_feats, pair_feats, A)
+      node_pred, bond_type_pred, bond_pred = self.net.predict(node_feats, pair_feats, A)
       node_pred = node_pred.data.to(t.device('cpu')).numpy()
+      bond_type_pred = bond_type_pred.data.to(t.device('cpu')).numpy()  
       bond_pred = bond_pred.data.to(t.device('cpu')).numpy()
-      preds.append((node_pred[0], bond_pred[0, :, :, 1]))
+      preds.append((node_pred[0], bond_type_pred[0], bond_pred[0, :, :, 1]))
     return preds
 
   def match_pool_matching(self, atom_pred, bond_pred, node_feats, A,max_iters=50):
@@ -262,6 +278,7 @@ class Trainer(object):
     # bond_pred size: batch_size x num_nodes x num_edge classes (32x6x6x2)
 
     atom_label = t.argmax(node_feats[:, :, :4], 2).float() #(32, 6)
+    bond_type_label = t.argmax(pair_feats[:,:, :, :4], 3).float() # 32,6x6
     bond_label = A.float()  #(32, 6, 6), 
     bond_label_deg = bond_label.sum(2)# 32x6 -
     bond_label_diag = bond_label.clone() 
@@ -287,7 +304,8 @@ class Trainer(object):
       if any(row_ind!=col_ind):
         print(row_ind,col_ind)
       atom_label[idx,:] = mpm.permute(atom_label[idx,:], row_ind, col_ind)
+      bond_type_label[idx,:,:] = mpm.permute(bond_type_label[idx,:,:], row_ind, col_ind)
       bond_label_diag[idx,:,:] = mpm.permute(bond_label_diag[idx,:,:], row_ind, col_ind)
     # print('after matching')
     # raise
-    return atom_label, bond_label_diag
+    return atom_label, bond_type_label, bond_label_diag

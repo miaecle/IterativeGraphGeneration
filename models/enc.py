@@ -86,6 +86,7 @@ class GraphConvEnc(nn.Module):
 
   def __init__(self,
                n_node_feat=23,
+               n_pair_feat=15,
                n_graphconv=[32, 64, 128],
                n_latent_feat=128,
                **kwargs):
@@ -103,12 +104,15 @@ class GraphConvEnc(nn.Module):
     self.n_latent_feat = n_latent_feat
     self.n_graphconv = n_graphconv
     self.n_node_feat = n_node_feat
+    self.n_pair_feat = n_pair_feat
     
     gc_module = []
     in_node_feat = self.n_node_feat
+    in_pair_feat = self.n_pair_feat
     for n_hidden in self.n_graphconv:
-      gc_module.append(GraphConvLayer(in_node_feat, n_hidden))
+      gc_module.append(GraphConvLayer(in_node_feat, in_pair_feat, n_hidden))
       in_node_feat = n_hidden
+      in_pair_feat = n_hidden
       
     self.gc_module = nn.ModuleList(gc_module)
     
@@ -126,7 +130,7 @@ class GraphConvEnc(nn.Module):
         A: batch_size * n_nodes * n_nodes
     """
     for i in range(len(self.n_graphconv)):
-      node_feats = self.gc_module[i](node_feats, A)
+      node_feats, pair_feats = self.gc_module[i](node_feats, pair_feats, A)
     z_mean = self.mean_fc(node_feats)
     z_log_std = self.logstd_fc(node_feats)
     return z_mean, z_log_std
