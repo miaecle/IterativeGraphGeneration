@@ -23,7 +23,7 @@ class Config:
 opt=Config()
 
 
-subset = 6
+subset = 8
 Mols = load_molecules('./data/qm9_subset' + str(subset) + '.smi')
 n_mols = len(Mols)
 np.random.seed(123)
@@ -41,9 +41,8 @@ best_valid_score = 0.
 valid_scores = []
 if __name__ == '__main__':
   for i in range(100):
-    if i>50:
-      model.opt.lr = 1e-5
-    model.train(train_mols, n_epochs=1)
+    model.opt.lr = 0.001 * 0.4**(i//10) #Staircase lr decay
+    model.train(train_mols, n_epochs=10, log_every_n_step=8)
     valid_scores.append(eval_reconstruction_rate(valid_mols, model.predict(valid_mols)))
     if valid_scores[-1] > best_valid_score:
       best_valid_score = valid_scores[-1]

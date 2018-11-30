@@ -178,7 +178,7 @@ class Trainer(object):
                      np.exp(bond_pred.detach().cpu().numpy())))
     return out_mols
     
-  def train(self, train_data, sample_weights=None, n_epochs=None, **kwargs):
+  def train(self, train_data, sample_weights=None, n_epochs=None, log_every_n_step=64, **kwargs):
     
     optimizer = Adam(self.net.parameters(),
                      lr=self.opt.lr,
@@ -225,10 +225,10 @@ class Trainer(object):
 
         rec = self.atom_label_loss(atom_pred.transpose(1, 2), # 32x4x6
                                    atom_label.long()).sum(1) + \
-              self.atom_label_loss(bond_type_pred.transpose(2, 3).transpose(1, 2), #32x4x6x6
-                                   bond_type_label.long()).sum(1).sum(1) + \
               self.bond_label_loss(bond_pred.transpose(2, 3).transpose(1, 2), #32x2x6x6
-                                   bond_label.long()).sum(1).sum(1) * self.lambd
+                                   bond_label.long()).sum(1).sum(1) * self.lambd + \
+              (self.bond_type_label_loss(bond_type_pred.transpose(2, 3).transpose(1, 2), #32x4x6x6
+                                         bond_type_label.long()) * bond_label).sum(1).sum(1) * self.lambd
         rec = (rec * weights).sum()
         kl = kl_normal(z_mean, t.exp(z_logstd), t.zeros_like(z_mean), t.ones_like(z_logstd)).sum(1)
         kl = (kl * weights).sum()
@@ -239,8 +239,7 @@ class Trainer(object):
         accum_rec_loss += rec
         accum_kl_loss += kl
         n_samples += t.sign(weights).sum()
-        if self.global_step%128 == 0:
-        # if self.global_step%1 == 0:
+        if self.global_step%log_every_n_step == 0:
           print ('Step {s} loss: {rec_loss}, {kl_loss}'.format(s=self.global_step, 
             rec_loss=accum_rec_loss.data[0]/n_samples,
             kl_loss=accum_kl_loss.data[0]/n_samples))

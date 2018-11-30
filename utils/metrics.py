@@ -15,12 +15,12 @@ def eval_reconstruction_rate(mols, preds):
   for mol, pred in zip(mols, preds):
     # labels
     node_label = np.argmax(mol[0][:, :4], 1)
-    bond_type_label = np.argmax(mol[1][:, :, :4], 2)   # 6x6 output
     A_label = mol[2]
+    bond_type_label = (np.argmax(mol[1][:, :, :4], 2) + 1) * A_label   # Separate bonded and non-bonded
     #preds
-    node_pred = np.argmax(pred[0], 1)
-    bond_type_pred = np.argmax(pred[1], 2)    
+    node_pred = np.argmax(pred[0], 1)   
     A_pred = (pred[2] > 0.5)*1
+    bond_type_pred = (np.argmax(pred[1], 2)  + 1) * A_pred
     #check
     if np.all([np.allclose(A_label, A_pred), 
       np.allclose(bond_type_label, bond_type_pred), 
