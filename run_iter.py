@@ -18,6 +18,8 @@ class Config:
     lr = 0.0001
     batch_size = 128
     max_epoch = 2000
+    n_epochs = 10
+    n_tries =  100 # how many training iterations to do
     gpu = False
     mpm = False
 opt=Config()
@@ -40,15 +42,16 @@ model = Trainer(vae, opt, lambd=0.5, kl_rate=0.1)
 best_valid_score = 0.
 valid_scores = []
 if __name__ == '__main__':
-  for i in range(100):
+  for i in range(opt.n_tries):
     model.opt.lr = 0.001 * 0.4**(i//10) #Staircase lr decay
-    model.train(train_mols, n_epochs=10, log_every_n_step=8)
+    model.train(train_mols, n_epochs=opt.n_epochs, log_every_n_step=8)
     valid_scores.append(eval_reconstruction_rate(valid_mols, model.predict(valid_mols)))
-    if valid_scores[-1] > best_valid_score:
+    if valid_scores[-1] > best_valid_score or i==0:
       best_valid_score = valid_scores[-1]
       print("New Best: %f" % best_valid_score)
       model.save('./model_iter_' + str(subset) + '.pth')
   model.load('./model_iter_' + str(subset) + '.pth')
+  # model.load('trained/model_iter_' + str(subset) + '.pth')
   print(eval_reconstruction_rate(train_mols, model.predict(train_mols)))
   print(eval_reconstruction_rate(valid_mols, model.predict(valid_mols)))
   print(eval_reconstruction_rate(test_mols, model.predict(test_mols)))
