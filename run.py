@@ -18,6 +18,8 @@ class Config:
     lr = 0.0001
     batch_size = 128
     max_epoch = 2000
+    n_epochs = 10 # higher???
+    n_tries = 3# 100 # how many training interations to do
     gpu = False
     mpm = False
 opt=Config()
@@ -40,12 +42,12 @@ model = Trainer(vae, opt, lambd=0.5, kl_rate=0.1)
 best_valid_score = 0.
 valid_scores = []
 if __name__ == '__main__':
-  for i in range(100):
+  for i in range(opt.n_tries):
     if i>50:
       model.opt.lr = 1e-5
-    model.train(train_mols, n_epochs=1)
+    model.train(train_mols, n_epochs=opt.n_epochs)
     valid_scores.append(eval_reconstruction_rate(valid_mols, model.predict(valid_mols)))
-    if valid_scores[-1] > best_valid_score:
+    if valid_scores[-1] > best_valid_score or i==0:
       best_valid_score = valid_scores[-1]
       print("New Best: %f" % best_valid_score)
       model.save('./model_' + str(subset) + '.pth')
