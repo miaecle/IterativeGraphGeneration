@@ -220,6 +220,28 @@ class IterativeRef(nn.Module):
     out = t.matmul(A_hat, self.x_dec(x))
     return out
 
+class IdentityRef(nn.Module):
+  """ Layer used by GraphVAE to simulate identity mapping instead of message passing """
+  def __init__(self,
+               n_latent_feat=128,
+               n_input_feat=128,
+               **kwargs):
+    super(IdentityRef, self).__init__(**kwargs)
+    self.n_latent_feat = n_latent_feat
+    self.n_input_feat = n_input_feat
+    
+    self.x_dec = nn.Sequential(
+          nn.Linear(self.n_input_feat, self.n_input_feat),
+          nn.ReLU(True),
+          nn.Linear(self.n_input_feat, self.n_input_feat),
+          nn.ReLU(True),
+          nn.Linear(self.n_input_feat, self.n_latent_feat))
+
+  def forward(self, z, x=None):
+    if x is None:
+      x = z
+    out = self.x_dec(x)
+    return out
     
 def kl_normal(qm, qv, pm, pv):
     """

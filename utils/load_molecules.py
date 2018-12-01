@@ -92,7 +92,7 @@ def pair_features(mol):
         features[a1, a1, -1] = 0.
   return features
   
-def load_molecules(path, raw=False, padding=False):
+def load_molecules(path, raw=False):
   Mols = []
   i = 0
   with open(path, 'r') as f:
@@ -114,13 +114,20 @@ def load_molecules(path, raw=False, padding=False):
       # if i%1000 == 0:
       #   print( A.shape, atom_f.shape, pair_f.shape)
   max_num_atoms = max([m[0].shape[0] for m in Mols])
-  # print('max_num_atoms',max_num_atoms)
-  for mol in Mols:
-    mol[0] = np.concatenate([np.eye(max_num_atoms)[:mol[0].shape[0]], mol[0]], 1)
-  if padding:
-    for i, mol in enumerate(Mols):
-      n = mol[0].shape[0]
-      Mols[i][0] = np.pad(mol[0], ((0, max_num_atoms - n), (0, 0)), 'constant')
-      Mols[i][1] = np.pad(mol[1], ((0, max_num_atoms - n), (0, max_num_atoms - n), (0, 0)), 'constant')
-      Mols[i][2] = np.pad(mol[2], ((0, max_num_atoms - n), (0, max_num_atoms - n)), 'constant')
+  print('max_num_atoms',max_num_atoms)
+  for i, mol in enumerate(Mols):
+    n = mol[0].shape[0]
+    pad_length = max_num_atoms - n
+    
+    atom_padding = np.zeros((pad_length, mol[0].shape[1]))
+    atom_padding[:, 4] = 1
+    atom_f = np.concatenate([mol[0], atom_padding], 0)
+    Mols[i][0] = np.concatenate([np.eye(max_num_atoms), atom_f], 1)
+
+    pair_f = np.pad(mol[1], ((0, max_num_atoms - n), (0, max_num_atoms - n), (0, 0)), 'constant')
+    Mols[i][1] = pair_f
+    
+    A_ = np.pad(mol[2], ((0, max_num_atoms - n), (0, max_num_atoms - n)), 'constant')
+    A_ = np.sign(A_ + np.eye(A_.shape[0]))
+    Mols[i][2] = A_
   return Mols

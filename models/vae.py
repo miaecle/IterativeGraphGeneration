@@ -9,7 +9,7 @@ from torch import nn
 import torch as t
 import torch.nn.functional as F
 import numpy as np
-from layers import kl_normal, IterativeRef
+from layers import kl_normal, IterativeRef, IdentityRef
 from torch.autograd import Variable
 from torch.optim import Adam
 import mpm 
@@ -17,13 +17,21 @@ import scipy.optimize
 
 
 class GraphVAE(nn.Module):
-  def __init__(self, enc, dec, gpu=False, **kwargs):
+  def __init__(self, enc, dec, n_inter=2, gpu=False, **kwargs):
     super(GraphVAE, self).__init__(**kwargs)
     self.enc = enc
     self.dec = dec
     assert self.enc.n_latent_feat == self.dec.n_latent_feat
+    self.n_inter = n_inter
+    self.inter_layers = []
+    for _ in range(n_inter):
+      self.inter_layers.append(IdentityRef(self.enc.n_latent_feat, 
+                                           self.enc.n_latent_feat))
+    self.inter_layers = nn.ModuleList(self.inter_layers)
+
+
     self.gpu = gpu
-    self.max_num_nodes = 6# TODO: reference NUM_ATOM_FEATURES, also change name to num_feat
+    self.max_num_nodes = 9# TODO: reference NUM_ATOM_FEATURES, also change name to num_feat
 
   
   def forward(self, node_feats, pair_feats, A, random=True):
@@ -37,7 +45,11 @@ class GraphVAE(nn.Module):
     else:
       z = z_mean
 
-    atom_pred, bond_type_pred, bond_pred = self.dec(z)
+    z_intermediate = z # Fully-connected layers
+    for layer in self.inter_layers:
+      z_intermediate = layer(z, z_intermediate)
+      
+    atom_pred, bond_type_pred, bond_pred = self.dec(z_intermediate)
 
     # recon_adj_lower = mpm.recover_adj_lower(atom_pred)
     # recon_adj_tensor = mpm.recover_full_adj_from_lower(recon_adj_lower)
@@ -52,7 +64,7 @@ class GraphVAE(nn.Module):
 
   def sample(self, z):
     z_intermediate = z
-    for layer in self.iterref_layers:
+    for layer in self.inter_layers:
       z_intermediate = layer(z, z_intermediate)
     atom_pred, bond_type_pred, bond_pred = self.dec(z_intermediate)
     return atom_pred, bond_type_pred, bond_pred
@@ -189,7 +201,8 @@ class Trainer(object):
       n_epochs = self.opt.max_epoch
     n_points = len(train_data)
     data_batches = self.assemble_batch(train_data, sample_weights=sample_weights)
-      
+    
+    mask = None
     for epoch in range(n_epochs):      
       accum_rec_loss = 0
       accum_kl_loss = 0
@@ -213,6 +226,12 @@ class Trainer(object):
           atom_label = t.argmax(node_feats[:, :, :4], 2).float() #(32, 6)
           bond_type_label = t.argmax(pair_feats[:,:, :, :4], 3).float() # 32,6x6
           bond_label = A.float()  #(32, 6, 6), 
+          
+          # Avoid calculating loss on diagonal terms
+          if mask is None:
+            mask = t.ones(1, *bond_label.shape[1:])
+            for i in range(mask.shape[1]):
+              mask[0, i, i] = 0
 
 
         # print('atom_pred', atom_pred.transpose(1, 2).shape) # (batch, 4, 6)
@@ -228,7 +247,7 @@ class Trainer(object):
               self.bond_label_loss(bond_pred.transpose(2, 3).transpose(1, 2), #32x2x6x6
                                    bond_label.long()).sum(1).sum(1) * self.lambd + \
               (self.bond_type_label_loss(bond_type_pred.transpose(2, 3).transpose(1, 2), #32x4x6x6
-                                         bond_type_label.long()) * bond_label).sum(1).sum(1) * self.lambd
+                                         bond_type_label.long()) * bond_label * mask).sum(1).sum(1) * self.lambd
         rec = (rec * weights).sum()
         kl = kl_normal(z_mean, t.exp(z_logstd), t.zeros_like(z_mean), t.ones_like(z_logstd)).sum(1)
         kl = (kl * weights).sum()
