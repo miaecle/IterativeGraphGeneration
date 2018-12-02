@@ -18,10 +18,12 @@ import pickle
 class Config:
     lr = 0.0001
     batch_size = 128
-    max_epoch = 2000
-    n_epochs = 2
+    max_epoch = 5000
+    n_epochs = 5000 # higher???
     n_tries = 100 # how many training iterations to do
-    gpu = False
+    kl_rate = 1.0
+    lambd = 0.5
+    gpu = True
     mpm = False
 opt=Config()
 
@@ -41,7 +43,7 @@ with open('./data/featurized_qm9.pkl', 'r') as f:
 enc = GraphConvEnc(n_node_feat=train_mols[0][0].shape[1])  
 dec = AffineDecoder()
 vae = IterativeRefGraphVAE(enc, dec, n_iterref=2, gpu=opt.gpu)
-model = Trainer(vae, opt, lambd=0.5, kl_rate=0.)
+model = Trainer(vae, opt, lambd=opt.lambd, kl_rate=opt.kl_rate)
 
 best_valid_score = 0.
 valid_scores = []

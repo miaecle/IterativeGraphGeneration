@@ -18,10 +18,12 @@ import pickle
 class Config:
     lr = 0.0001
     batch_size = 128
-    max_epoch = 2000
-    n_epochs = 2 # higher???
+    max_epoch = 5000
+    n_epochs = 5000 # higher???
     n_tries = 100 # how many training iterations to do
-    gpu = False
+    kl_rate = 0.1 
+    lambd = 0.5
+    gpu = True
     mpm = False
 opt=Config()
 
@@ -33,16 +35,17 @@ np.random.shuffle(Mols)
 train_mols = Mols[:int(0.8*n_mols)]
 valid_mols = Mols[int(0.8*n_mols):int(0.9*n_mols)]
 test_mols = Mols[int(0.9*n_mols):]
-
+pickle.dump([train_mols, valid_mols, test_mols], open('./data/featurized_qm9.pkl', 'w'))
 """
+
 with open('./data/featurized_qm9.pkl', 'r') as f:
   train_mols, valid_mols, test_mols = pickle.load(f)
-
+print('loaded molecules')
 
 enc = GraphConvEnc(n_node_feat=train_mols[0][0].shape[1])  
 dec = AffineDecoder()
 vae = GraphVAE(enc, dec, gpu=opt.gpu)
-model = Trainer(vae, opt, lambd=0.5, kl_rate=0.)
+model = Trainer(vae, opt, lambd=opt.lambd, kl_rate=opt.kl_rate)
 
 best_valid_score = 0.
 valid_scores = []
