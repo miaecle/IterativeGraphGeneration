@@ -23,11 +23,12 @@ class Config:
     mpm = False
 opt=Config()
 
-enc = GraphConvEnc(n_node_feat=31)  
+enc = GraphConvEnc(n_node_feat=32)  
 dec = AffineDecoder()
-vae = IterativeRefGraphVAE(enc, dec, n_iterref=2, gpu=opt.gpu)
+#vae = IterativeRefGraphVAE(enc, dec, n_iterref=2, gpu=opt.gpu)
+vae = GraphVAE(enc, dec,  gpu=opt.gpu)
 model = Trainer(vae, opt, lambd=0.5, kl_rate=0.1)
-model.load('./model_8_IRGVAE.pth')
+model.load('./model_qm9_1000.pth')
 
 atom_types = ['C', 'N', 'O', 'F']
 bond_types = [Chem.rdchem.BondType.SINGLE, 

@@ -185,8 +185,9 @@ class Trainer(object):
       z = t.randn(1, size, self.net.dec.n_latent_feat)
       if self.opt.gpu:
         z = z.cuda()
-      atom_pred, bond_pred = self.net.sample(z)
+      atom_pred, bond_type_pred, bond_pred = self.net.sample(z)
     out_mols.append((np.exp(atom_pred.detach().cpu().numpy()), 
+                     np.exp(bond_type_pred.detach().cpu().numpy()),
                      np.exp(bond_pred.detach().cpu().numpy())))
     return out_mols
     
@@ -229,10 +230,14 @@ class Trainer(object):
           
           # Avoid calculating loss on diagonal terms
           if mask is None:
-            mask = t.ones(1, *bond_label.shape[1:])
+            if self.opt.gpu:
+                mask = t.cuda.FloatTensor(1,*bond_label.shape[1:]).fill_(1.)
+            else:
+                mask = t.ones(1, *bond_label.shape[1:])
+            
             for i in range(mask.shape[1]):
               mask[0, i, i] = 0
-
+        
 
         # print('atom_pred', atom_pred.transpose(1, 2).shape) # (batch, 4, 6)
         # print('atom_label', atom_label.long().shape) #(batch, 6)
@@ -240,8 +245,13 @@ class Trainer(object):
         # print('bond_type_label', bond_type_label.long().shape) #(batch, 6, 6))
         # print( 'bond_pred', bond_pred.transpose(2, 3).transpose(1, 2).shape) #(batch, 2, 6, 6)
         # print('bond_label', bond_label.long().shape) #(batch, 6, 6)
-
-
+        
+#         print(self.bond_type_label_loss(bond_type_pred.transpose(2, 3).transpose(1, 2), #32x4x6x6
+#                                          bond_type_label.long()).is_cuda)
+#         print(bond_label.is_cuda)
+#         print(((self.bond_type_label_loss(bond_type_pred.transpose(2, 3).transpose(1, 2), #32x4x6x6
+#                                          bond_type_label.long()) * bond_label * mask).sum(1).sum(1)).is_cuda)
+        
         rec = self.atom_label_loss(atom_pred.transpose(1, 2), # 32x4x6
                                    atom_label.long()).sum(1) + \
               self.bond_label_loss(bond_pred.transpose(2, 3).transpose(1, 2), #32x2x6x6
