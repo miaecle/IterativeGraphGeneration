@@ -257,7 +257,7 @@ class Trainer(object):
               self.bond_label_loss(bond_pred.transpose(2, 3).transpose(1, 2), #32x2x6x6
                                    bond_label.long()).sum(1).sum(1) * self.lambd + \
               (self.bond_type_label_loss(bond_type_pred.transpose(2, 3).transpose(1, 2), #32x4x6x6
-                                         bond_type_label.long()) * bond_label * mask).sum(1).sum(1) * self.lambd
+                                         bond_type_label.long()) * bond_label * mask).sum(1).sum(1).cuda() * self.lambd
         rec = (rec * weights).sum()
         kl = kl_normal(z_mean, t.exp(z_logstd), t.zeros_like(z_mean), t.ones_like(z_logstd)).sum(1)
         kl = (kl * weights).sum()
