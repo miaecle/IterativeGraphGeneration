@@ -85,12 +85,12 @@ def validity(model):
 
 def variety(model, smis=None):
   if smis is None:
-    smis = sample_molecules(model, 100)
+    smis = sample_molecules(model, 1000)
   return len(set(smis))/float(len(smis))
 
 def novelty(model, train_smis, smis=None):
   if smis is None:
-    smis = sample_molecules(model, 100)
+    smis = sample_molecules(model, 1000)
   novel_ct = 0
   for smi in smis:
     if not smi in train_smis:
