@@ -186,7 +186,7 @@ class Trainer(object):
       if self.opt.gpu:
         z = z.cuda()
       atom_pred, bond_type_pred, bond_pred = self.net.sample(z)
-    out_mols.append((np.exp(atom_pred.detach().cpu().numpy()), 
+      out_mols.append((np.exp(atom_pred.detach().cpu().numpy()), 
                      np.exp(bond_type_pred.detach().cpu().numpy()),
                      np.exp(bond_pred.detach().cpu().numpy())))
     return out_mols

@@ -5,6 +5,10 @@ Created on Mon Nov  5 22:05:20 2018
 
 @author: zqwu
 """
+
+rec = (self.bond_type_label_loss(bond_type_pred.transpose(2, 3).transpose(1, 2), #32x4x6x6
+                                 bond_type_label.long()) * bond_label * mask).cuda().sum(1).sum(1) * self.lambd
+
 from rdkit import Chem
 import numpy as np
 

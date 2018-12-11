@@ -63,4 +63,12 @@ if __name__ == '__main__':
   print(eval_reconstruction_rate(train_mols, model.predict(train_mols)))
   print(eval_reconstruction_rate(valid_mols, model.predict(valid_mols)))
   print(eval_reconstruction_rate(test_mols, model.predict(test_mols)))
+<<<<<<< Updated upstream
   pickle.dump(valid_scores, open('logging_iter.pkl', 'wb'))
+=======
+
+#   New Best: 0.943233
+# 0.943113492923
+# 0.943232745742
+# 0.940921652102
+>>>>>>> Stashed changes

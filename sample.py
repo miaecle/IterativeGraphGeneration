@@ -35,34 +35,36 @@ bond_types = [Chem.rdchem.BondType.SINGLE,
                              Chem.rdchem.BondType.DOUBLE, 
                              Chem.rdchem.BondType.TRIPLE,
                              Chem.rdchem.BondType.AROMATIC]
+smi_arr = []
+mol_arr = []
 ct = 0
+len_iter = 0
 while True:
-  if ct == 100:
-    break
-  try:
-    sample = model.sample(1, 8)[0]
-    sample = [sample[0][0], sample[1][0], sample[2][0]]
-    new_mol = Chem.Mol()
-    new_mol = Chem.EditableMol(new_mol)
-    # add nodes
-    for i in range(8):
-      new_atom_type = atom_types[np.argmax(sample[0][i])]
-      new_atom = Chem.Atom(new_atom_type)
-      ind = new_mol.AddAtom(new_atom)
-      assert ind == i
-    # add bonds with bond type
-
-    for i in range(8):
-      for j in range(i+1, 8):
-        if sample[2][i, j, 1] > 0.5:
-          bond_type = bond_types[np.argmax(sample[1][i,j,:])]
-          new_mol.AddBond(i, j, bond_type)
-    mol = new_mol.GetMol()
-    Chem.SanitizeMol(mol)
-    smi = Chem.MolToSmiles(mol)
-    if '.' in smi:
-      continue
-    print(smi)
-    ct += 1
-  except:
-    pass
+    len_iter+=1
+    if ct == 100:
+        break
+    try:
+        sample = model.sample(1, 8)[0]
+        sample = [sample[0][0], sample[1][0],sample[2][0]]
+        new_mol = Chem.Mol()
+        new_mol = Chem.EditableMol(new_mol)
+        for i in range(8):
+            new_atom_type = atom_types[np.argmax(sample[0][i])]
+            new_atom = Chem.Atom(new_atom_type)
+            ind = new_mol.AddAtom(new_atom)
+            assert ind == i
+        for i in range(8):
+            for j in range(i+1, 8):
+                if sample[2][i, j, 1] > 0.5:
+                    new_mol.AddBond(i, j, Chem.rdchem.BondType.SINGLE)
+        mol = new_mol.GetMol()
+        Chem.SanitizeMol(mol)
+        smi = Chem.MolToSmiles(mol)
+        if '.' in smi:
+            continue
+        print(smi)
+        smi_arr.append(smi)
+        mol_arr.append(mol)
+        ct += 1
+    except:
+        pass
